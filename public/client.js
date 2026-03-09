@@ -562,18 +562,20 @@ function getPlayerModel(seat) {
   return playerModels.get(seat);
 }
 
-let ws = null;
 let room = null;
 let meSeat = null;
+let mePlayerId = null;
 let availableRooms = [];
 let myAction = "shoot";
 let lobbyPollTimer = null;
+let roomPollTimer = null;
 let pointerLocked = false;
 let yawOffset = 0;
 let pitchOffset = 0;
 let baseYaw = 0;
 let basePitch = -0.22;
 let lastAimSent = 0;
+const apiBase = configuredServerUrl.replace(/\/$/, "");
 
 const pitchMin = -0.5;
 const pitchMax = 0.18;
@@ -610,16 +612,118 @@ function playSound(name) {
   clone.play().catch(() => {});
 }
 
-function send(event, data) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ event, data }));
+async function apiRequest(url, options = {}) {
+  const response = await fetch(`${apiBase}${url}`, {
+    headers: {
+      "Content-Type": "application/json"
+    },
+    ...options
+  });
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.message || "Sunucu istegi basarisiz.");
+  }
+  return payload;
+}
+
+function getSavedSession() {
+  try {
+    return JSON.parse(localStorage.getItem("fps-duel-session") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  localStorage.setItem("fps-duel-session", JSON.stringify(session));
+}
+
+function clearSession() {
+  localStorage.removeItem("fps-duel-session");
+}
+
+function applyJoinedState(joined) {
+  meSeat = joined.seat;
+  mePlayerId = joined.playerId;
+  saveSession({
+    code: joined.code,
+    seat: joined.seat,
+    playerId: joined.playerId
+  });
+  lobbyPanel.classList.add("hidden");
+  hud.classList.remove("hidden");
+  scoreboardEl.classList.remove("hidden");
+  lockBtn.classList.remove("hidden");
+  crosshair.classList.remove("hidden");
+  roomCodeBadge.textContent = `ODA: ${joined.code}`;
+  statusPill.textContent = `Odaya girdin (${joined.code})`;
+}
+
+async function fetchLobby() {
+  const payload = await apiRequest("/api/lobby");
+  renderOpenRooms(payload.rooms || []);
+}
+
+async function fetchRoomState() {
+  if (!room?.code || !mePlayerId) return;
+  const query = new URLSearchParams({
+    code: room.code,
+    playerId: mePlayerId
+  });
+  const payload = await apiRequest(`/api/room/state?${query.toString()}`);
+  room = payload.room;
+  applyRoom(payload.room);
+}
+
+async function createRoom() {
+  const payload = await apiRequest("/api/room/create", {
+    method: "POST",
+    body: JSON.stringify({ name: nameInput.value })
+  });
+  applyJoinedState(payload.joined);
+  room = payload.room;
+  applyRoom(payload.room);
+}
+
+async function joinRoom(code) {
+  const payload = await apiRequest("/api/room/join", {
+    method: "POST",
+    body: JSON.stringify({ name: nameInput.value, code })
+  });
+  applyJoinedState(payload.joined);
+  room = payload.room;
+  applyRoom(payload.room);
+}
+
+async function sendAction(data) {
+  if (!room?.code || !mePlayerId) return;
+  const payload = await apiRequest("/api/room/action", {
+    method: "POST",
+    body: JSON.stringify({
+      code: room.code,
+      playerId: mePlayerId,
+      ...data
+    })
+  });
+  room = payload.room;
 }
 
 function setAction(action) {
   myAction = action;
   shootBtn.classList.toggle("selected", action === "shoot");
   holdBtn.classList.toggle("selected", action === "hold");
-  if (action === "hold") send("action:set", { action: "hold" });
+  if (action === "hold") {
+    sendAction({ action: "hold" }).catch((error) => {
+      statusPill.textContent = error.message;
+    });
+  }
 }
 
 setAction("shoot");
@@ -668,18 +772,46 @@ function startLobbyPolling() {
   if (lobbyPollTimer) clearInterval(lobbyPollTimer);
   lobbyPollTimer = setInterval(() => {
     if (lobbyPanel.classList.contains("hidden")) return;
-    send("lobby:list", {});
+    fetchLobby().catch((error) => {
+      statusPill.textContent = error.message;
+    });
   }, 1000);
+}
+
+function startRoomPolling() {
+  if (roomPollTimer) clearInterval(roomPollTimer);
+  roomPollTimer = setInterval(() => {
+    if (!room?.code || !mePlayerId) return;
+    fetchRoomState().catch((error) => {
+      statusPill.textContent = "Baglanti koptu. Yeniden deneniyor...";
+      if (/bulunamadi|kapandi/i.test(error.message)) {
+        clearSession();
+        meSeat = null;
+        mePlayerId = null;
+        room = null;
+        lobbyPanel.classList.remove("hidden");
+        hud.classList.add("hidden");
+        scoreboardEl.classList.add("hidden");
+        lockBtn.classList.add("hidden");
+        crosshair.classList.add("hidden");
+        bottomHud.classList.add("hidden");
+      }
+    });
+  }, 350);
 }
 
 createRoomBtn.addEventListener("click", () => {
   lobbyError.textContent = "";
-  send("room:create", { name: nameInput.value });
+  createRoom().catch((error) => {
+    lobbyError.textContent = error.message;
+  });
 });
 
 joinRoomBtn.addEventListener("click", () => {
   lobbyError.textContent = "";
-  send("room:join", { name: nameInput.value, code: roomCodeInput.value });
+  joinRoom(roomCodeInput.value).catch((error) => {
+    lobbyError.textContent = error.message;
+  });
 });
 
 openRoomsList.addEventListener("click", (event) => {
@@ -689,21 +821,43 @@ openRoomsList.addEventListener("click", (event) => {
   const code = btn.dataset.roomCode;
   roomCodeInput.value = code;
   lobbyError.textContent = "";
-  send("room:join", { name: nameInput.value, code });
+  joinRoom(code).catch((error) => {
+    lobbyError.textContent = error.message;
+  });
 });
 
 startGameBtn.addEventListener("click", () => {
-  send("room:start", {});
+  apiRequest("/api/room/start", {
+    method: "POST",
+    body: JSON.stringify({ code: room?.code, playerId: mePlayerId })
+  })
+    .then((payload) => {
+      room = payload.room;
+      applyRoom(payload.room);
+    })
+    .catch((error) => {
+      statusPill.textContent = error.message;
+    });
 });
 
 restartGameBtn.addEventListener("click", () => {
-  send("room:restart_vote", {});
+  apiRequest("/api/room/restart-vote", {
+    method: "POST",
+    body: JSON.stringify({ code: room?.code, playerId: mePlayerId })
+  })
+    .then((payload) => {
+      room = payload.room;
+      applyRoom(payload.room);
+    })
+    .catch((error) => {
+      statusPill.textContent = error.message;
+    });
 });
 
 shootBtn.addEventListener("click", () => {
   if (!room || room.phase !== "planning") return;
   setAction("shoot");
-  sendCurrentAim();
+  sendCurrentAim().catch(() => {});
 });
 
 holdBtn.addEventListener("click", () => {
@@ -733,50 +887,42 @@ window.addEventListener("pointerdown", (event) => {
   unlockAudio();
   if (!pointerLocked || !room || room.phase !== "planning") return;
   setAction("shoot");
-  sendCurrentAim();
+  sendCurrentAim().catch(() => {});
 });
 
-function connect() {
-  const wsBase = configuredServerUrl
-    ? configuredServerUrl.replace(/^http/i, "ws").replace(/\/$/, "")
-    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
-  ws = new WebSocket(wsBase);
-  ws.addEventListener("open", () => {
-    statusPill.textContent = "Sunucuya baglandi";
-    send("lobby:list", {});
-  });
-  ws.addEventListener("close", () => {
-    statusPill.textContent = "Baglanti koptu. Yeniden deneniyor...";
-    setTimeout(connect, 1000);
-  });
-  ws.addEventListener("message", (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.event === "room:error") {
-      lobbyError.textContent = msg.data.message || "Islem basarisiz";
-    }
-    if (msg.event === "lobby:rooms") {
-      renderOpenRooms(msg.data.rooms || []);
-    }
-    if (msg.event === "room:joined") {
-      meSeat = msg.data.seat;
+async function bootstrapConnection() {
+  statusPill.textContent = "Sunucuya baglandi";
+  const saved = getSavedSession();
+  if (saved?.code && saved?.playerId) {
+    meSeat = saved.seat ?? null;
+    mePlayerId = saved.playerId;
+    room = { code: saved.code };
+    try {
+      await fetchRoomState();
       lobbyPanel.classList.add("hidden");
       hud.classList.remove("hidden");
       scoreboardEl.classList.remove("hidden");
       lockBtn.classList.remove("hidden");
       crosshair.classList.remove("hidden");
-      roomCodeBadge.textContent = `ODA: ${msg.data.code}`;
-      statusPill.textContent = `Odaya girdin (${msg.data.code})`;
+      roomCodeBadge.textContent = `ODA: ${saved.code}`;
+      statusPill.textContent = `Odaya girdin (${saved.code})`;
+    } catch {
+      clearSession();
+      meSeat = null;
+      mePlayerId = null;
       room = null;
     }
-    if (msg.event === "room:update") {
-      room = msg.data;
-      applyRoom(msg.data);
-    }
-  });
+  }
+  try {
+    await fetchLobby();
+  } catch (error) {
+    statusPill.textContent = error.message;
+  }
+  startLobbyPolling();
+  startRoomPolling();
 }
 
-connect();
-startLobbyPolling();
+bootstrapConnection();
 
 function clearTrails() {
   while (shotTrails.children.length) {
@@ -849,9 +995,9 @@ function applyCamera() {
   camera.rotation.z = 0;
 }
 
-function sendCurrentAim() {
+async function sendCurrentAim() {
   const dir = getHorizontalAimDirection();
-  send("action:set", {
+  await sendAction({
     action: "shoot",
     aimDir: { x: dir.x, z: dir.z },
     pitch: basePitch + pitchOffset
@@ -1022,7 +1168,7 @@ function animate() {
     const now = performance.now();
     if (now - lastAimSent > 100) {
       lastAimSent = now;
-      sendCurrentAim();
+      sendCurrentAim().catch(() => {});
     }
   }
 

@@ -12,9 +12,10 @@ const actionHandler = require("./api/room/action");
 
 const app = express();
 const port = process.env.PORT || 3000;
+const publicDir = path.join(__dirname, "public");
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(__dirname));
+app.use(express.static(publicDir));
 
 app.get("/api/health", healthHandler);
 app.get("/api/lobby", lobbyHandler);
@@ -26,7 +27,7 @@ app.post("/api/room/restart-vote", restartVoteHandler);
 app.post("/api/room/action", actionHandler);
 
 app.get("/", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
 app.listen(port, () => {
