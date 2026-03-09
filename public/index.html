@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS Duel Arena</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="lobbyPanel" class="panel">
+      <h1>FPS Duel Arena</h1>
+      <p>Oda olustur veya kodla katil. Maksimum 4 oyuncu, bos slotlara bot gelir.</p>
+      <input id="nameInput" placeholder="Oyuncu adin" maxlength="18" />
+      <div class="row">
+        <button id="createRoomBtn">Oda Olustur</button>
+      </div>
+      <div class="row">
+        <input id="roomCodeInput" placeholder="Oda kodu" maxlength="6" />
+        <button id="joinRoomBtn">Odaya Gir</button>
+      </div>
+      <div id="lobbyError"></div>
+      <div id="openRoomsPanel">
+        <div class="open-rooms-head">
+          <span>Acik Odalar</span>
+          <span id="openRoomsCount">0</span>
+        </div>
+        <div id="openRoomsList"></div>
+      </div>
+    </div>
+
+    <div id="hud" class="panel hidden">
+      <div class="topline">
+        <div class="brand">FPS Duel Arena</div>
+        <div id="roomCodeBadge">ODA: ----</div>
+      </div>
+      <div id="phase">Bekleniyor...</div>
+      <div id="timer">--</div>
+      <div id="log">-</div>
+      <div class="row">
+        <button id="startGameBtn" class="hidden">Oyunu Baslat</button>
+        <button id="restartGameBtn" class="hidden">Restart Oyu Ver</button>
+        <button id="shootBtn">Ateş Et</button>
+        <button id="holdBtn">Bu Tur Bekle (+1 Mermi)</button>
+      </div>
+      <div class="hint">Sabit koltuk FPS: sadece mouse ile bakis. 360 derece etrafina bakabilirsin.</div>
+    </div>
+
+    <div id="scoreboard" class="panel hidden"></div>
+    <div id="bottomHud" class="hidden">
+      <div class="bottom-stats">
+        <div class="bottom-labels">
+          <span id="bottomHpText">CAN 3/3</span>
+          <span id="bottomAmmoText">MERMI 1/6</span>
+        </div>
+        <div class="bottom-bar">
+          <div id="bottomHpFill"></div>
+        </div>
+      </div>
+    </div>
+    <div id="statusPill">Baglanti...</div>
+    <div id="crosshair" class="hidden">+</div>
+    <button id="lockBtn" class="hidden">FPS Baslat (Mouse Kilitle)</button>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.176.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.176.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script src="./config.js"></script>
+    <script type="module" src="./client.js"></script>
+  </body>
+</html>

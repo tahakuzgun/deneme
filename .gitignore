@@ -1,0 +1,7 @@
+# Node.js
+node_modules/
+dist/
+.vercel/
+.env
+*.log
+package-lock.json

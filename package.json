@@ -1,0 +1,16 @@
+{
+  "name": "four-seat-showdown",
+  "version": "1.0.0",
+  "description": "Online 4-seat Three.js duel game with bot fallback.",
+  "main": "server.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "vercel-build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}
